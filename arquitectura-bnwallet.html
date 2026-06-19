@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BN Wallet — Arquitectura del Sistema</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  .header {
+    text-align: center; padding: 40px 20px 10px;
+    background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+  }
+  .header h1 {
+    font-size: 32px; font-weight: 800;
+    background: linear-gradient(135deg, #60a5fa, #a78bfa);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .header p { color: #94a3b8; margin-top: 6px; font-size: 14px; }
+  .container { max-width: 1300px; margin: 0 auto; padding: 20px; }
+  .layer {
+    margin-bottom: 28px;
+    background: rgba(30, 41, 59, 0.5);
+    border: 1px solid rgba(148, 163, 184, 0.1);
+    border-radius: 16px; padding: 20px 24px;
+    backdrop-filter: blur(8px);
+    transition: border-color 0.3s;
+  }
+  .layer:hover { border-color: rgba(148, 163, 184, 0.25); }
+  .layer-title {
+    font-size: 13px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1.5px; color: #64748b; margin-bottom: 16px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .layer-title .icon { font-size: 16px; }
+  .nodes { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .node {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 12px 20px; border-radius: 12px;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+    text-decoration: none; color: #fff;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    transition: all 0.25s cubic-bezier(.4,0,.2,1);
+    position: relative; border: 1px solid rgba(255,255,255,0.08);
+  }
+  .node:hover {
+    transform: translateY(-3px) scale(1.03);
+    box-shadow: 0 8px 28px rgba(0,0,0,0.4);
+    border-color: rgba(255,255,255,0.2);
+  }
+  .node:active { transform: scale(0.97); }
+  .node .icon { font-size: 20px; line-height: 1; }
+  .node .port {
+    font-size: 10px; font-weight: 500;
+    background: rgba(0,0,0,0.3); padding: 2px 8px;
+    border-radius: 6px; color: rgba(255,255,255,0.6);
+  }
+  .node .tooltip {
+    position: absolute; bottom: calc(100% + 8px); left: 50%;
+    transform: translateX(-50%) scale(0.9); opacity: 0;
+    pointer-events: none; transition: all 0.2s;
+    background: #1e293b; color: #e2e8f0;
+    padding: 8px 14px; border-radius: 8px;
+    font-size: 12px; font-weight: 400; white-space: nowrap;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    border: 1px solid rgba(148,163,184,0.15);
+  }
+  .node:hover .tooltip { opacity: 1; transform: translateX(-50%) scale(1); }
+  .node .tooltip::after {
+    content: ''; position: absolute; top: 100%; left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent; border-top-color: #1e293b;
+  }
+  .node-group {
+    display: flex; flex-direction: column; gap: 6px;
+    background: rgba(0,0,0,0.15); padding: 10px 14px;
+    border-radius: 12px; border: 1px solid rgba(148,163,184,0.06);
+  }
+  .node-group-label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+    color: #64748b; font-weight: 600;
+  }
+  .node-sm {
+    padding: 6px 12px; font-size: 12px; gap: 6px;
+  }
+  .node-sm .icon { font-size: 14px; }
+  .badge {
+    display: inline-block; font-size: 9px; font-weight: 700;
+    padding: 2px 8px; border-radius: 20px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .badge-http { background: rgba(59,130,246,0.2); color: #60a5fa; }
+  .badge-grpc { background: rgba(16,185,129,0.2); color: #34d399; }
+  .badge-metrics { background: rgba(239,68,68,0.2); color: #f87171; }
+  .badge-sdk { background: rgba(139,92,246,0.2); color: #a78bfa; }
+  .badge-sql { background: rgba(234,179,8,0.2); color: #facc15; }
+  .badge-prod { background: rgba(34,197,94,0.2); color: #4ade80; }
+  .node-lg { padding: 16px 28px; font-size: 15px; }
+  .flow-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .arrow { color: #475569; font-size: 18px; user-select: none; }
+  @media (max-width: 768px) {
+    .nodes { gap: 8px; }
+    .node { padding: 10px 14px; font-size: 13px; }
+    .node .icon { font-size: 16px; }
+    .header h1 { font-size: 24px; }
+  }
+  .section-label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+    color: #475569; font-weight: 600; margin: 8px 0 4px;
+  }
+  .repo-list {
+    display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;
+  }
+  .repo-link {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 14px; border-radius: 8px;
+    background: rgba(30,41,59,0.8); border: 1px solid rgba(148,163,184,0.1);
+    color: #94a3b8; text-decoration: none; font-size: 12px; font-weight: 500;
+    transition: all 0.2s;
+  }
+  .repo-link:hover {
+    background: rgba(59,130,246,0.15); border-color: rgba(59,130,246,0.3);
+    color: #60a5fa;
+  }
+  .url-row {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>BN Wallet — Arquitectura del Sistema</h1>
+  <p>Billetera Digital del Banco de la Nación · Haz clic en cualquier nodo para abrir el servicio</p>
+</div>
+
+<div class="container">
+
+  <!-- CAPA 1: USUARIOS -->
+  <div class="layer">
+    <div class="layer-title"><span class="icon">🌐</span> Usuarios</div>
+    <div class="nodes">
+      <a class="node" style="background:linear-gradient(135deg,#22c55e,#16a34a)" href="https://bn-wallet-front.vercel.app" target="_blank">
+        <span class="icon">🖥️</span> Web App
+        <span class="tooltip">https://bn-wallet-front.vercel.app</span>
+      </a>
+      <span class="arrow">→</span>
+      <a class="node" style="background:linear-gradient(135deg,#6366f1,#4f46e5)" href="https://expo.dev/accounts/markillatdevia/projects/bnwallet/builds/305e9ab1-e4e0-4336-9c1c-9b0f23ed8ed7" target="_blank">
+        <span class="icon">📱</span> App Móvil Expo
+        <span class="tooltip">https://expo.dev/accounts/markillatdev</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- CAPA 2: FRONTEND -->
+  <div class="layer">
+    <div class="layer-title"><span class="icon">🎨</span> Frontend</div>
+    <div class="nodes">
+      <a class="node node-lg" style="background:linear-gradient(135deg,#3b82f6,#2563eb)" href="https://bn-wallet-front.vercel.app" target="_blank">
+        <span class="icon">▲</span> Next.js 16
+        <span class="badge badge-prod">PROD</span>
+        <span class="tooltip">https://bn-wallet-front.vercel.app</span>
+      </a>
+      <div style="color:#64748b;font-size:11px;font-weight:500;display:flex;align-items:center;gap:8px">
+        <span class="badge badge-http">HTTP REST</span>
+      </div>
+    </div>
+    <div class="section-label" style="margin-top:14px">Módulos del Frontend</div>
+    <div class="nodes">
+      <a class="node" style="background:linear-gradient(135deg,#3b82f6,#1d4ed8)" href="https://bn-wallet-front.vercel.app" target="_blank">
+        <span class="icon">📊</span> Dashboard
+        <span class="tooltip">https://bn-wallet-front.vercel.app</span>
+      </a>
+      <a class="node" style="background:linear-gradient(135deg,#3b82f6,#1d4ed8)" href="https://bn-wallet-front.vercel.app/usuarios" target="_blank">
+        <span class="icon">👥</span> Usuarios
+        <span class="tooltip">https://bn-wallet-front.vercel.app/usuarios</span>
+      </a>
+      <a class="node" style="background:linear-gradient(135deg,#3b82f6,#1d4ed8)" href="https://bn-wallet-front.vercel.app/creditos" target="_blank">
+        <span class="icon">💰</span> Créditos
+        <span class="tooltip">https://bn-wallet-front.vercel.app/creditos</span>
+      </a>
+      <a class="node" style="background:linear-gradient(135deg,#3b82f6,#1d4ed8)" href="https://bn-wallet-front.vercel.app/plaft" target="_blank">
+        <span class="icon">🛡️</span> PLAFT
+        <span class="tooltip">https://bn-wallet-front.vercel.app/plaft</span>
+      </a>
+      <a class="node" style="background:linear-gradient(135deg,#3b82f6,#1d4ed8)" href="https://bn-wallet-front.vercel.app/logistica" target="_blank">
+        <span class="icon">🚚</span> Logística
+        <span class="tooltip">https://bn-wallet-front.vercel.app/logistica</span>
+      </a>
+      <a class="node" style="background:linear-gradient(135deg,#3b82f6,#1d4ed8)" href="https://bn-wallet-front.vercel.app/help-desk" target="_blank">
+        <span class="icon">🎫</span> Help Desk
+        <span class="tooltip">https://bn-wallet-front.vercel.app/help-desk</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- CAPA 3: BACKEND -->
+  <div class="layer">
+    <div class="layer-title"><span class="icon">⚙️</span> Backend</div>
+
+    <div class="section-label">API Principal</div>
+    <div class="nodes" style="margin-bottom:14px">
+      <a class="node node-lg" style="background:linear-gradient(135deg,#10b981,#059669)" href="https://bn-wallet-back.onrender.com/api/docs" target="_blank">
+        <span class="icon">⚙️</span> NestJS 11 API
+        <span class="badge badge-prod">PROD</span>
+        <span class="tooltip">https://bn-wallet-back.onrender.com/api/docs</span>
+      </a>
+    </div>
+
+    <div class="section-label">Integraciones Externas</div>
+    <div class="nodes">
+      <a class="node" style="background:linear-gradient(135deg,#f59e0b,#d97706)" href="http://161.97.113.145:8080" target="_blank">
+        <span class="icon">🎫</span> GLPI 11
+        <span class="port">:8080</span>
+        <span class="tooltip">http://161.97.113.145:8080 — Service Desk</span>
+      </a>
+      <span class="badge badge-http">API REST</span>
+      <span class="arrow">→</span>
+      <a class="node" style="background:linear-gradient(135deg,#22c55e,#16a34a)" href="https://bn-wallet-back.onrender.com/api/docs" target="_blank">
+        <span class="icon">⚡</span> Backend Prod
+        <span class="tooltip">https://bn-wallet-back.onrender.com/api/docs</span>
+      </a>
+      <span class="arrow">→</span>
+      <a class="node" style="background:linear-gradient(135deg,#8b5cf6,#7c3aed)" href="https://console.cloudinary.com/app/c-5b7730920d72fddce67232ae367182/assets/media_library/search?q=&view_mode=mosaic" target="_blank">
+        <span class="icon">☁️</span> Cloudinary
+        <span class="tooltip">Almacenamiento de documentos</span>
+      </a>
+      <span class="badge badge-sdk">SDK</span>
+      <span class="arrow">→</span>
+      <a class="node" style="background:linear-gradient(135deg,#f97316,#ea580c)" href="https://dash.cloudflare.com/9cccf7b141ddf28fdaf836177dd58a46/r2/default/buckets/bn-wallet-backups" target="_blank">
+        <span class="icon">☁️</span> Cloudflare R2
+        <span class="tooltip">Backup inmutable · Auditoría</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- CAPA 4: OBSERVABILIDAD -->
+  <div class="layer">
+    <div class="layer-title"><span class="icon">📊</span> Observabilidad <span style="font-size:10px;font-weight:400;color:#64748b;margin-left:4px">(Docker Compose)</span></div>
+    <div class="flow-row">
+      <a class="node" style="background:linear-gradient(135deg,#ef4444,#dc2626)" href="http://161.97.113.145:9090" target="_blank">
+        <span class="icon">📈</span> Prometheus
+        <span class="port">:9090</span>
+        <span class="tooltip">http://161.97.113.145:9090</span>
+      </a>
+      <span class="badge badge-metrics">metrics</span>
+      <span class="arrow">→</span>
+      <a class="node node-lg" style="background:linear-gradient(135deg,#f59e0b,#d97706)" href="http://161.97.113.145:3001/d/bnwallet-overview/bn-wallet-overview?orgId=1&from=now-1h&to=now&timezone=browser&var-entorno=production&refresh=30s" target="_blank">
+        <span class="icon">📊</span> Grafana
+        <span class="port">:3001</span>
+        <span class="tooltip">BN Wallet Overview — Dashboard principal</span>
+      </a>
+    </div>
+    <div class="section-label" style="margin-top:12px">Dashboards</div>
+    <div class="nodes">
+      <a class="node" style="background:linear-gradient(135deg,#f59e0b,#d97706)" href="http://161.97.113.145:3001/d/bnwallet-overview/bn-wallet-overview?orgId=1&from=now-1h&to=now&timezone=browser&var-entorno=production&refresh=30s" target="_blank">
+        <span class="icon">📊</span> BN Wallet Overview
+        <span class="tooltip">Dashboard principal — KPIs del sistema</span>
+      </a>
+      <a class="node" style="background:linear-gradient(135deg,#f59e0b,#d97706)" href="http://161.97.113.145:3001/d/glpi-overview/glpi-infraestructura?orgId=1" target="_blank">
+        <span class="icon">🎫</span> GLPI Infraestructura
+        <span class="tooltip">Monitoreo GLPI — MariaDB + estado web</span>
+      </a>
+      <a class="node" style="background:linear-gradient(135deg,#f59e0b,#d97706)" href="http://161.97.113.145:3001/d/bnwallet-test-results/bn-wallet-test-results?orgId=1" target="_blank">
+        <span class="icon">📋</span> Test Results
+        <span class="tooltip">Resultados backend + pgbench</span>
+      </a>
+    </div>
+    <div class="section-label" style="margin-top:12px">Exporters Docker</div>
+    <div class="nodes">
+      <div class="node" style="background:linear-gradient(135deg,#10b981,#059669);cursor:default;opacity:0.85" onclick="event.stopPropagation()">
+        <span class="icon">🔍</span> Jaeger
+        <span class="port">:16686</span>
+        <span class="tooltip">Trazas distribuidas · Docker</span>
+      </div>
+      <div class="node" style="background:linear-gradient(135deg,#3b82f6,#2563eb);cursor:default;opacity:0.85" onclick="event.stopPropagation()">
+        <span class="icon">📋</span> Loki
+        <span class="port">:3100</span>
+        <span class="tooltip">Centralización de logs · Docker</span>
+      </div>
+      <div class="node" style="background:linear-gradient(135deg,#475569,#374151);cursor:default;opacity:0.85" onclick="event.stopPropagation()">
+        <span class="icon">🖥️</span> node-exporter
+        <span class="port">:9100</span>
+        <span class="tooltip">Métricas del servidor · Docker</span>
+      </div>
+      <div class="node" style="background:linear-gradient(135deg,#475569,#374151);cursor:default;opacity:0.85" onclick="event.stopPropagation()">
+        <span class="icon">🗄️</span> postgres-exporter
+        <span class="port">:9187</span>
+        <span class="tooltip">Métricas de PostgreSQL · Docker</span>
+      </div>
+      <div class="node" style="background:linear-gradient(135deg,#475569,#374151);cursor:default;opacity:0.85" onclick="event.stopPropagation()">
+        <span class="icon">🌐</span> blackbox-exporter
+        <span class="port">:9115</span>
+        <span class="tooltip">Health checks HTTP (GLPI) · Docker</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- CAPA 5: BASE DE DATOS -->
+  <div class="layer">
+    <div class="layer-title"><span class="icon">🗄️</span> Base de Datos</div>
+    <div class="nodes">
+      <a class="node node-lg" style="background:linear-gradient(135deg,#06b6d4,#0891b2)" href="https://console.neon.tech/app/projects/frosty-hill-22769196/branches/br-billowing-waterfall-aqbrh9tl/tables" target="_blank">
+        <span class="icon">🐘</span> Neon PostgreSQL
+        <span class="badge badge-prod">PROD</span>
+        <span class="tooltip">Consola Neon — Tablas y consultas</span>
+      </a>
+      <a class="node" style="background:linear-gradient(135deg,#06b6d4,#0891b2)" href="http://161.97.113.145:3001/explore?schemaVersion=1&panes=%7B%22gkc%22:%7B%22datasource%22:%22neon%22,%22queries%22:%5B%7B%22refId%22:%22A%22,%22datasource%22:%7B%22type%22:%22grafana-postgresql-datasource%22,%22uid%22:%22neon%22%7D,%22format%22:%22table%22,%22rawSql%22:%22SELECT%20%2A%20FROM%20transferencia%20LIMIT%2050%20%22,%22editorMode%22:%22builder%22,%22sql%22:%7B%22columns%22:%5B%7B%22type%22:%22function%22,%22parameters%22:%5B%7B%22type%22:%22functionParameter%22,%22name%22:%22%2A%22%7D%5D%7D%5D,%22groupBy%22:%5B%7B%22type%22:%22groupBy%22,%22property%22:%7B%22type%22:%22string%22%7D%7D%5D,%22limit%22:50%7D,%22dataset%22:%22db_banco_nacion%22,%22table%22:%22transferencia%22%7D%5D,%22range%22:%7B%22from%22:%22now-1h%22,%22to%22:%22now%22%7D,%22compact%22:false%7D%7D&orgId=1" target="_blank">
+        <span class="icon">📊</span> Neon en Grafana
+        <span class="port">Explore</span>
+        <span class="tooltip">Grafana Explore — Neon PostgreSQL</span>
+      </a>
+      <span class="badge badge-sql">SQL</span>
+      <span class="arrow">→</span>
+      <a class="node" style="background:linear-gradient(135deg,#f59e0b,#d97706)" href="http://161.97.113.145:3001/explore?schemaVersion=1&panes=%7B%22gkc%22:%7B%22datasource%22:%22glpi_db%22,%22queries%22:%5B%7B%22refId%22:%22A%22,%22datasource%22:%7B%22type%22:%22mysql%22,%22uid%22:%22glpi_db%22%7D,%22format%22:%22table%22,%22rawSql%22:%22SELECT%20%2A%20FROM%20glpi.glpi_tickets%20LIMIT%2050%20%22,%22editorMode%22:%22builder%22,%22dataset%22:%22glpi%22,%22sql%22:%7B%22columns%22:%5B%7B%22type%22:%22function%22,%22parameters%22:%5B%7B%22type%22:%22functionParameter%22,%22name%22:%22%2A%22%7D%5D%7D%5D,%22groupBy%22:%5B%7B%22type%22:%22groupBy%22,%22property%22:%7B%22type%22:%22string%22%7D%7D%5D,%22limit%22:50%7D,%22table%22:%22glpi_tickets%22%7D%5D,%22range%22:%7B%22from%22:%22now-1h%22,%22to%22:%22now%22%7D,%22compact%22:false%7D%7D&orgId=1" target="_blank">
+        <span class="icon">🎫</span> GLPI MariaDB
+        <span class="port">Explore</span>
+        <span class="tooltip">Grafana Explore — MySQL GLPI</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- CAPA 6: REPOSITORIOS -->
+  <div class="layer">
+    <div class="layer-title"><span class="icon">💻</span> Repositorios GitHub</div>
+    <div class="repo-list">
+      <a class="repo-link" href="https://github.com/markillatdev/BN-Wallet-Back" target="_blank"><span>⚙️</span> BN-Wallet-Back (NestJS)</a>
+      <a class="repo-link" href="https://github.com/markillatdev/BN-Wallet-Front" target="_blank"><span>🎨</span> BN-Wallet-Front (Next.js)</a>
+      <a class="repo-link" href="https://github.com/markillatdev/Bn-wallet-Mobile" target="_blank"><span>📱</span> Bn-wallet-Mobile (Expo)</a>
+      <a class="repo-link" href="https://github.com/markillatdev/Bn-wallet-observabilidad" target="_blank"><span>📊</span> Bn-wallet-observabilidad</a>
+      <a class="repo-link" href="https://github.com/markillatdev/GLPI" target="_blank"><span>🎫</span> GLPI</a>
+    </div>
+  </div>
+
+  <!-- CAPA 6: INFRAESTRUCTURA -->
+  <div class="layer">
+    <div class="layer-title"><span class="icon">🚀</span> Infraestructura y CI/CD</div>
+    <div class="nodes">
+      <a class="node" style="background:linear-gradient(135deg,#22c55e,#16a34a)" href="https://bn-wallet-front.vercel.app" target="_blank">
+        <span class="icon">▲</span> Vercel (Frontend)
+        <span class="tooltip">https://bn-wallet-front.vercel.app</span>
+      </a>
+      <a class="node" style="background:linear-gradient(135deg,#8b5cf6,#7c3aed)" href="https://dashboard.render.com/web/srv-d84jea19rddc739ma5v0" target="_blank">
+        <span class="icon">⚡</span> Render (Backend)
+        <span class="tooltip">Dashboard Render — Backend</span>
+      </a>
+      <a class="node" style="background:linear-gradient(135deg,#22c55e,#16a34a)" href="https://console.neon.tech/app/projects/frosty-hill-22769196/branches/br-billowing-waterfall-aqbrh9tl/tables" target="_blank">
+        <span class="icon">🐘</span> Neon DB
+        <span class="tooltip">PostgreSQL serverless — Tablas</span>
+      </a>
+      <a class="node" style="background:linear-gradient(135deg,#f97316,#ea580c);cursor:pointer" onclick="copySSH(event)" data-ssh="ssh root@161.97.113.145">
+        <span class="icon">🖥️</span> VPS Producción
+        <span class="tooltip">Click para copiar SSH · root@161.97.113.145</span>
+      </a>
+      <a class="node" style="background:linear-gradient(135deg,#ef4444,#dc2626)" href="https://github.com/markillatdev/BN-Wallet-Back/actions/runs/27451305276" target="_blank">
+        <span class="icon">⚡</span> GitHub Action
+        <span class="tooltip">CI/CD — Último run</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- Leyenda -->
+  <div class="layer" style="margin-top:10px">
+    <div class="layer-title"><span class="icon">ℹ️</span> Leyenda</div>
+    <div class="nodes" style="gap:16px">
+      <span class="badge badge-http">HTTP REST</span>
+      <span class="badge badge-grpc">gRPC</span>
+      <span class="badge badge-metrics">Métricas</span>
+      <span class="badge badge-sdk">SDK</span>
+      <span class="badge badge-sql">SQL</span>
+      <span style="color:#64748b;font-size:12px">—</span>
+      <span style="color:#94a3b8;font-size:13px">Haz clic en cualquier nodo para abrir el servicio</span>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div style="text-align:center;padding:24px 0 40px;color:#475569;font-size:12px">
+    BN Wallet · Versión 1.0 · Junio 2026
+    &nbsp;·&nbsp; <a href="https://github.com/markillatdev" style="color:#60a5fa;text-decoration:none">GitHub markillatdev</a>
+    &nbsp;·&nbsp; <a href="MANUAL-USUARIO-BnWallet.docx" style="color:#60a5fa;text-decoration:none">Manual de Usuario</a>
+  </div>
+
+</div>
+
+<script>
+  document.querySelectorAll('.node').forEach(n => {
+    n.addEventListener('click', function(e) {
+      const href = this.getAttribute('href');
+      if (href && href !== '#') {
+        e.preventDefault();
+        window.open(href, '_blank');
+      }
+    });
+  });
+  function copySSH(e) {
+    e.preventDefault();
+    const ssh = e.currentTarget.getAttribute('data-ssh');
+    const ta = document.createElement('textarea');
+    ta.value = ssh;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, 99999);
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch(e) {}
+    document.body.removeChild(ta);
+    const tip = e.currentTarget.querySelector('.tooltip');
+    const orig = tip.textContent;
+    tip.textContent = ok ? '✓ Copiado: ' + ssh : 'Selecciona y copia: ' + ssh;
+    if (!ok) window.prompt('Copia manualmente:', ssh);
+    setTimeout(() => tip.textContent = orig, 3000);
+  }
+</script>
+
+</body>
+</html>
